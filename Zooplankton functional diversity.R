@@ -13,7 +13,7 @@ getwd()
 
 #Set the working directory to the folder where you have the data
 # removed by privacy
-#setwd("your_path_here"
+#setwd("your_path_here")
 
 
 #Load the libraries ####
@@ -25,7 +25,10 @@ library(party)
 library(caret)
 library(permimp)
 library(usdm)
-
+library(mgcv)
+library(itsadug)
+library(ggplot2)
+library(gratia)
 
 # Load the data ####
 
@@ -614,7 +617,7 @@ barplot(
      col = "steelblue")
 
 
-#metafiles saved as 1200*787 size
+#svgs saved as 1200*787 size
 
 
 
@@ -981,7 +984,7 @@ FRic_top10 %>%
 
 View(results_important_variables_indices)
 
-
+results_important_variables_indices %>% clipr::write_clip()
 
 # results from cforeststats for all the models together in a tibble
 
@@ -1002,6 +1005,670 @@ cforestStats(cf.fric) %>%
 View(results_cforest_stats_indices)
 
 
-#Here I stop for today, continue with GAM models
+#GAMMS models ####
+
+library(mgcv)
+
+
+#We will create the corresponding GAMM models for each index using the top10 variables 
+#from the random forest approach. Moreover, Reservoir, Year, Location and Type will be included as random effect. 
+#Since we are not sure if they will be significant we´ll create different models. 
+#first model with both random effect, second only with location and third with only type.
+#This approach will be done for each index, so we will have 5 indices and 3 models for each index, so a total of 15 models.
+
+#Abbreviatures
+# gm = gamm model 
+# m1 = both random effects m2 = only location, m3 = only type.  
+
+# FRic ####
+
+#model with all random effects
+
+gm.fric.m1 <- gam(FRic ~ s(Depth, k = 5) + s(Volume, k = 5) + s(Nitrate, k = 5) +
+                    s(Conduct, k = 5) + s(DO, k = 5) + s(Fito.Biomasa, k = 5) +
+                    s(pH, k = 5) + s(Secchi, k = 5) + s(Alcalinity, k = 5) +
+                    s(TP, k = 5) + #fixed terms 
+                    s(Location, bs = "re") + #random effect 1
+                    s(Type, bs = "re"), #random effect 2
+                  data = normalized_fd_envi,
+                  method = "REML")
+
+
+#model with only location as random effect
+
+gm.fric.m2 <- gam(FRic ~ s(Depth, k = 5) + s(Volume, k = 5) + s(Nitrate, k = 5) +
+                    s(Conduct, k = 5) + s(DO, k = 5) + s(Fito.Biomasa, k = 5) +
+                    s(pH, k = 5) + s(Secchi, k = 5) + s(Alcalinity, k = 5) +
+                    s(TP, k = 5) + #fixed terms 
+                    s(Location, bs = "re"), #random effect 1
+                  data = normalized_fd_envi,
+                  method = "REML")
+
+#third model with only type as random effect
+
+
+gm.fric.m3 <- gam(FRic ~ s(Depth, k = 5) + s(Volume, k = 5) + s(Nitrate, k = 5) +
+                    s(Conduct, k = 5) + s(DO, k = 5) + s(Fito.Biomasa, k = 5) +
+                    s(pH, k = 5) + s(Secchi, k = 5) + s(Alcalinity, k = 5) +
+                    s(TP, k = 5) + #fixed terms 
+                    s(Type, bs = "re"), #random effect 2
+                  data = normalized_fd_envi,
+                  method = "REML")
+
+
+#checking the models with AIC to see the best model
+AIC(gm.fric.m1, gm.fric.m2, gm.fric.m3)
+
+#results 
+summary(gm.fric.m1)
+summary(gm.fric.m2)
+summary(gm.fric.m3)
+
+#cheking gam 
+gam.check(gm.fric.m1)
+gam.check(gm.fric.m2)
+gam.check(gm.fric.m3)
+
+
+#The results indicated nor Location or Type has any effect on FRic
+#However we are losing some important things, the effects of each reservoir and year
+#thus we need to extract those data from the df rownames 
+
+
+library(stringr)
+
+normalized_fd_envi %>%
+  mutate(
+    Code = rownames(.),
+    Reservoir = str_sub(Code, 1, 3),
+    Year = as.numeric(str_sub(Code, 4, 7))) %>% 
+  mutate(
+    Reservoir = as.factor(Reservoir),
+    Year = as.factor(Year)
+  ) -> normalized_fd_envi
+
+
+#Now we can try new models to check if they makes any difference 
+
+
+#model including reservoir and year as random factor
+
+gm.FRic.m4 <- gam(FRic ~ s(Depth, k = 5) + s(Volume, k = 5) + s(Nitrate, k = 5) +
+                    s(Conduct, k = 5) + s(DO, k = 5) + s(Fito.Biomasa, k = 5) +
+                    s(Year, bs = "re") + 
+                    s(Reservoir, bs = "re"),
+                  data = normalized_fd_envi,
+                  method = "REML")
+
+#model including reservoir as random factor and year as fixed factor
+
+gm.FRic.m5 <- gam(FRic ~ s(Depth, k = 5) + s(Volume, k = 5) + s(Nitrate, k = 5) +
+                    s(Conduct, k = 5) + s(DO, k = 5) + s(Fito.Biomasa, k = 5) +
+                    s(as.numeric(Year), k = 5) + 
+                    s(Reservoir, bs = "re"),
+                  data = normalized_fd_envi,
+                  method = "REML")
+
+AIC(gm.fric.m1, gm.fric.m2, gm.fric.m3, gm.FRic.m4, gm.FRic.m5)
+
+summary(gm.FRic.m4)
+summary(gm.FRic.m5)
+
+gam.check(gm.FRic.m4)
+gam.check(gm.FRic.m5)
+
+
+#The results indicated that the model 4 is the best one. In this model the year is the only
+#significant random effect plus the fixed effects of depth, volume, nitrate, conduct, DO and phytoplankton biomass.
+
+#This suggest that FRic is dominated by the morphometry (depth volume) and trophic state (nitrate, DO,
+#phytoplankton biomass plus the conductivity as proxy of geochemistry)
+#Since year was significiant means that probably episodic or punctual process may influence functional structure.
+#Once environmental variables are controlled, there is not evidence that location, type or reservoir has any effect on FRic. 
+
+#"Functional richness in reservoirs is primarily driven by environmental gradients related to conductivity, system size
+#and trophic state, while spatial identity (reservoir) and temporal trends play a minor role. 
+#However, significant interannual variability suggests that stochastic or episodic processes may influence
+#functional structure (like blooms, extreme drought, floods, bad management, etc.)
+
+
+#updating the final model
+
+#During gam.check Conductivity had a warning, so we will increase the k value and will remove 
+#all the variables which weren't significant. Then will compare it with previous models. 
+
+
+gm.FRic.m6 <- gam(FRic ~ s(Depth, k = 5) + s(Volume, k = 5) + s(Nitrate, k = 5) +
+                    s(Conduct, k = 10) + s(DO, k = 5) + s(Fito.Biomasa, k = 5) +
+                    s(Year, bs = "re"),
+                  data = normalized_fd_envi,
+                  method = "REML")
+
+
+AIC(gm.fric.m1, gm.fric.m2, gm.fric.m3, gm.FRic.m4, gm.FRic.m5, gm.FRic.m6)
+#the best model is the new one (m6)
+
+summary(gm.FRic.m6)
+#R2 0.18    #Dev explained 23.2%
+
+gam.check(gm.FRic.m6)
+
+#Model 6 m6, is the best and final model
+
+#Results summary
+#“In the final GAMM for FRic, conductivity showed the strongest association 
+#with functional richness, with a significant nonlinear effect 
+#(edf = 3.86, F = 4.31, p = 0.0016). Depth, nitrate, volume, phytoplankton biomass, 
+#and year also contributed significantly to the model, indicating that FRic was 
+#structured by a combination of physico-chemical gradients and interannual variation.
+#
+
+#Now we plot it 
+
+library(itsadug)
+
+
+plot_smooth(gm.FRic.m6,
+            view = "Conduct",
+            rm.ranef = T,
+            rug = T,
+            col = "gold3",
+       #     transform.view = expm1,
+            ylim = c(0, 0.25),
+            xlab = "Conductivity",
+            main = "Effect of Conductivity on FRic") 
+
+#Fig saved in 900*650 size as svg
+
+#plot with the raw data 
+plot_smooth(gm.FRic.m6,
+            view = "Conduct",
+            rm.ranef = T,
+            rug = T,
+            col = "gold3",
+            transform.view = expm1,
+            ylim = c(0, 0.25),
+            xlab = "Conductivity",
+            main = "Effect of Conductivity on FRic") 
+
+
+# transform.view = expm1 is to back transform the values to the original scale
+# since we log transformed the data before, but i will leave the graph as is it. 
+
+
+# Now with this knowledge we will create the models for the next indices,
+#first including the top10 variables plus the corresponding random effects, 
+#the remove the non-significant variables and update to the final model. 
+
+
+# FEve ####
+
+
+#model with all random effects
+
+gm.feve.m1 <- gam(FEve ~ s(pH, k = 5) + s(Phycocianin, k = 5) + s(Volume, k = 5) +
+                    s(Conduct, k = 5) + s(TP, k = 5) + s(Chla, k = 5) +
+                    s(reservoir.percentage, k = 5) + s(Secchi, k = 5) + s(Nitrate, k = 5) +
+                    s(Temp, k = 5) + #fixed terms
+                    s(Year, bs = "re") + #random effect 1
+                    s(Reservoir, bs = "re") + #random effect 2
+                    s(Location, bs = "re") +  #random effect 3
+                    s(Type, bs = "re"), #random effect 4
+                  data = normalized_fd_envi,
+                  method = "REML")
+
+summary(gm.feve.m1)
+gam.check(gm.feve.m1)
+
+gm.feve.m2 <- gam(FEve ~ s(Phycocianin, k = 5) +
+                    s(Conduct, k = 5) + s(TP, k = 5) +
+                    s(Secchi, k = 5) +  #fixed terms
+                    s(Year, bs = "re") + #random effect 1
+                    s(Reservoir, bs = "re"),  #random effect 2
+                  data = normalized_fd_envi,
+                  method = "REML")
+
+AIC(gm.feve.m1, gm.feve.m2)
+#better the second model
+
+summary(gm.feve.m2)
+gam.check(gm.feve.m2)
+
+
+gm.feve.m3 <- gam(FEve ~ s(Phycocianin, k = 5) +
+                    s(Conduct, k = 5) + 
+                    s(Secchi, k = 5) +  #fixed terms
+                    s(Year, bs = "re") + #random effect 1
+                    s(Reservoir, bs = "re"),  #random effect 2
+                  data = normalized_fd_envi,
+                  method = "REML")
+
+AIC(gm.feve.m1, gm.feve.m2, gm.feve.m3)
+#still better the second model, thus we will use the second model
+
+
+summary(gm.feve.m2)
+#R2 0.291     #Dev explained 37.9%
+
+#In the Feve model year and reservoir identity were significant random effects, 
+#while the fixed effects of Secchi disk was significant, phycocyanin and conductivity, were marginals
+#predictors of functional evenness. This suggests that FEve is influenced by a combination of trophic state 
+# conductivity and interannual variability, with some structuring by reservoir identity.
+
+#Secchi disk was the the most important variable in the model 
+#(edf 3.69, f 3.14, p = 0.009)
+
+
+plot_smooth(gm.feve.m2,
+            view = "Secchi",
+            rm.ranef = T,
+            rug = NULL,
+            col = "lightblue3",
+          #  transform.view = expm1,
+            ylim = c(0.2, 0.7),
+            xlab = "Secchi disk depth",
+            main = "Effect of Secchi disk depth on FEve")
+
+#plot with the raw data 
+
+plot_smooth(gm.feve.m2,
+            view = "Secchi",
+            rm.ranef = T,
+            rug = NULL,
+            col = "lightblue3",
+            transform.view = expm1,
+            ylim = c(0.2, 0.7),
+            xlab = "Secchi disk depth",
+            main = "Effect of Secchi disk depth on FEve")
+
+
+# FDis ####
+
+
+#model with all random effects
+
+gm.fdis.m1 <- gam(FDis ~ s(Conduct, k = 5) + s(reservoir.percentage, k = 5) +
+                    s(Phycocianin, k = 5) + s(pH, k = 5) + s(TP, k = 5) +
+                    s(Volume, k = 5) + s(Alcalinity, k = 5) +
+                    s(Silicates, k = 5) + s(Depth, k = 5) + s(Phytoplankton, k = 5) + #fixed terms
+                    s(Year, bs = "re") + #random effect 1
+                    s(Reservoir, bs = "re") + #random effect 2
+                    s(Location, bs = "re") +  #random effect 3
+                    s(Type, bs = "re"), #random effect 4
+                  data = normalized_fd_envi,
+                  method = "REML")
+
+summary(gm.fdis.m1)
+gam.check(gm.fdis.m1)
+
+#Second model without the non-significant values 
+
+gm.fdis.m2 <- gam(FDis ~ s(Conduct, k = 5) + 
+                    s(pH, k = 5) + s(TP, k = 5) +
+                    s(Alcalinity, k = 5) +
+                    s(Silicates, k = 5) +  #fixed terms
+                    s(Year, bs = "re") + #random effect 1
+                    s(Reservoir, bs = "re"), #random effect 2
+                    data = normalized_fd_envi,
+                  method = "REML")
+
+AIC(gm.fdis.m1, gm.fdis.m2)
+#better the second model
+
+summary(gm.fdis.m2)
+
+gam.check(gm.fdis.m2)
+#ok no problem with k values
+
+
+summary(gm.fdis.m2)
+#R2 0.423     #Dev explained 47.8%
+
+#In the Fdis model year is significant random effects while reservoir is slighty significant (p = 0.05), 
+#Conductivity was the more significant fixed effect, followed by pH, TP, alkalinity and silicates
+#suggesting that ionic gradients drive functional dispersion in zooplankton communities followed by trophic state
+# interannual variability also plays an important role, with some structuring by reservoir identity.
+
+#Conductivity disk was the the most important variable in the model 
+#conductivity (F = 24.13, p < 0.001, edf = 1.21),
+
+#this variable had almost a lineal tendency 
+
+plot_smooth(gm.fdis.m2,
+            view = "Conduct",
+            rm.ranef = T,
+            rug = T,
+            col = "gold3",
+        #    transform.view = expm1,
+            ylim = c(0, 0.3),
+            xlab = "Conductivity",
+            main = "Effect of Conductivity on FDis")
+
+#Plot with the raw data 
+
+plot_smooth(gm.fdis.m2,
+            view = "Conduct",
+            rm.ranef = T,
+            rug = T,
+            col = "gold3",
+            transform.view = expm1,
+            ylim = c(0, 0.3),
+            xlab = "Conductivity",
+            main = "Effect of Conductivity on FDis")
+
+# FDiv ####
+
+#model with all random effects
+
+
+gm.fdiv.m1 <- gam(FDiv ~ s(pH, k = 5) + s(Volume, k = 5) + s(Fito.Biomasa, k = 5) +
+                    s(Alcalinity, k = 5) + s(Chla, k = 5)+  s(Temp, k = 5) +
+                    s(TP, k = 5) + s(SS, k = 5) + s(Conduct, k = 5) +
+                    s(Depth, k = 5) + #fixed terms
+                    s(Year, bs = "re") + #random effect 1
+                    s(Reservoir, bs = "re") + #random effect 2
+                    s(Location, bs = "re") +  #random effect 3
+                    s(Type, bs = "re"), #random effect 4
+                  data = normalized_fd_envi,
+                  method = "REML")
+
+summary(gm.fdiv.m1)
+gam.check(gm.fdiv.m1)
+
+#second model without the non significant variables 
+
+gm.fdiv.m2 <- gam(FDiv ~ s(pH, k = 5) + s(Fito.Biomasa, k = 10) + #fixed terms
+                    s(Year, bs = "re"), #random effect 1
+                  data = normalized_fd_envi,
+                  method = "REML")
+
+summary(gm.fdiv.m2)
+gam.check(gm.fdiv.m2)
+#no problem with k values now
+
+AIC(gm.fdiv.m1, gm.fdiv.m2)
+#better the second model
+
+
+summary(gm.fdiv.m2)
+#R2 0.098     #Dev explained 12.8%
+
+#in the model FDiv was most strongly associated with pH (F = 7.94, p = 0.002, edf = 1.21),
+# indicating that acid-base chemistry structures functional divergence. Phytoplankton biomass
+#showed a nonlinear effect (edf = 3.08, p = 0.018), while interannual variation was also significant.
+
+#plotting
+
+plot_smooth(gm.fdiv.m2,
+            view = "pH",
+            rm.ranef = TRUE,
+            rug = TRUE,
+            #transform.view = expm1,
+            col = "chocolate",
+            ylim = c(0.0, 1),
+            main = "Effect of pH on FDiv")
+
+#Fig saved in 900*650 size svg 
+
+#not needed any transformation since pH is already on log10 scale
+
+#Shannon ####
+
+#model with all random effects
+gm.shannon.m1 <- gam(Shannon ~ s(Depth, k = 5) + s(Chla, k = 5) +
+                       s(reservoir.percentage, k = 5) + s(DO, k = 5) +
+                    s(Conduct, k = 5) + s(Turbidity, k = 5) +
+                    s(Silicates, k = 5) + s(TP, k = 5) + s(SS, k = 5) +
+                    s(Phytoplankton, k = 5) + #fixed terms
+                    s(Year, bs = "re") + #random effect 1
+                    s(Reservoir, bs = "re") + #random effect 2
+                    s(Location, bs = "re") +  #random effect 3
+                    s(Type, bs = "re"), #random effect 4
+                  data = normalized_fd_envi,
+                  method = "REML")
+
+summary(gm.shannon.m1)
+
+gam.check(gm.shannon.m1)
+#no problem with k values
+
+#second model without the non significant variables
+
+gm.shannon.m2 <- gam(Shannon ~ s(Chla, k = 5) + s(DO, k = 5) + #fixed terms
+                       s(Year, bs = "re") + #random effect 1
+                       s(Location, bs = "re"),  #random effect 2
+                     data = normalized_fd_envi,
+                     method = "REML")
+
+AIC(gm.shannon.m1, gm.shannon.m2)
+#better second model 
+
+summary(gm.shannon.m2)
+#R2 0.08     #Dev explained 11.3%
+
+#The shannon model showed chla as the most siginificat variable followed by DO. 
+#This sugesst shannon is mainly driven by reservoir´s productivity. 
+#The yeaar and location were also significant random effects, suggesting that both 
+#interannual variability and spatial identity influence shannon diversity in zooplankton communities. 
+
+#most important fixed factor 
+#chla (edf = 1 (lineal), F = 5.99, p value = 0.01486)
+
+
+#plotting
+plot_smooth(gm.shannon.m2,
+            view = "Chla",
+            rm.ranef = TRUE,
+            rug = TRUE,
+            col = "forestgreen",
+            #transform.view = expm1,
+            ylim = c(1,2),
+            xlim = c(0,5),
+            main = "Effect of Chla on Shannon diversity")
+
+#Fig saved in 900*650 size svg 
+
+
+#plot with the raw data
+
+plot_smooth(gm.shannon.m2,
+            view = "Chla",
+            rm.ranef = TRUE,
+            rug = TRUE,
+            col = "forestgreen",
+            transform.view = expm1,
+            ylim = c(1,2),
+            xlim = c(0,5),
+            main = "Effect of Chla on Shannon diversity")
+
+
+#Richness ####
+
+#model with all random effects
+gm.richness.m1 <- gam(Richness ~ s(Fito.Biomasa, k = 5) + s(pH, k = 5) +
+                       s(Temp, k = 5) + s(Silicates, k = 5) +
+                       s(reservoir.percentage, k = 5) + s(SS, k = 5) +
+                       s(Turbidity, k = 5) + s(Conduct, k = 5) + s(Chla, k = 5) +
+                       s(Depth, k = 5) + #fixed terms
+                       s(Year, bs = "re") + #random effect 1
+                       s(Reservoir, bs = "re") + #random effect 2
+                       s(Location, bs = "re") +  #random effect 3
+                       s(Type, bs = "re"), #random effect 4
+                     data = normalized_fd_envi,
+                     method = "REML")
+
+summary(gm.richness.m1)
+
+gam.check(gm.richness.m1)
+#no problem with k values
+
+#second model without the non significant variables
+
+gm.richness.m2 <- gam(Richness ~ s(Temp, k = 5) + s(SS, k = 5) +
+                        s(Conduct, k = 5) + s(Chla, k = 5) +
+                        s(Depth, k = 5) + #fixed terms
+                        s(Year, bs = "re") + #random effect 1
+                        s(Reservoir, bs = "re") + #random effect 2
+                        s(Type, bs = "re"), #random effect 4
+                      data = normalized_fd_envi,
+                      method = "REML")
+
+AIC(gm.richness.m1, gm.richness.m2)
+#better second model 
+
+summary(gm.richness.m2)
+#R2 0.41     #Dev explained 48.4
+
+
+#This model indicates that richness is mainly driven by suspend solids, conductivity,
+#chla, temperature and depth, suggesting that both trophic state and morphometry are important
+#drivers of species richness in zooplankton. Year, reservoir id and type were also
+#significant random effects, indicating that interannual variability, spatial identity and reservoir
+#type influence richness patterns. SO basically i think clearer and low productive reserovoirs 
+# have higher richness, while more productive and turbid reservoirs have lower richness.
+
+#plotting
+
+plot_smooth(gm.richness.m2,
+            view = "SS",
+            rm.ranef = TRUE,
+            rug = TRUE,
+            col = "darkorchid",
+            ylim = c(4,16),
+            xlab = "Suspended solids",
+            main = "Effect of Suspended Solids on Richness")
+
+
+#Fig saved in 900*650 size svg 
+
+#plot with the raw data
+plot_smooth(gm.richness.m2,
+            view = "SS",
+            rm.ranef = TRUE,
+            rug = TRUE,
+            col = "darkorchid",
+            transform.view = expm1,
+            ylim = c(4,16),
+            xlab = "Suspended solids",
+            main = "Effect of Suspended Solids on Richness")
+
+
+#saving all models together in a 2x3  panel
+
+
+#  panel 2x3
+par(mfrow = c(2, 3), 
+    mar = c(4, 4, 3, 1) + 1,  # margins
+    cex.axis = 1.3,     # size of numbers axis
+    cex.lab = 1.4,     # size of axis labels
+    cex.main = 1.2)     # size of titles
+
+#back to normal
+par(mfrow = c(1,1))
+
+
+#Plots with normalized data and raw data saved as 1400*790 svg files
+#since in the metafiles files the shadow area is not showed and not sure why. 
+
+
+#RDA or CCA  #####
+
+#Finally we will produce a RDA or CCA analysis to check how functional 
+#traits are related with the environmental variables 
+
+#We already have the environmental data as normalized_fd_envi
+#now we need the zooplankton abundance and functional traits
+
+
+#First we will do it with species data
+
+#abundance
+View(abundance_raw)
+#ok data looks good
+
+str(abundance_raw)
+
+#Traits
+View(fd_traits)
+
+
+#First is need to bring the abundance data for each species and adding into the traits df 
+
+#preparing the abundance df 
+
+abundance_raw %>% 
+  tibble::rownames_to_column() %>% 
+  rename(Species = "rowname") %>% 
+  t(.) %>% #transponse the df
+  as.data.frame() %>% 
+  tibble::rownames_to_column() %>%
+  janitor::row_to_names(row_number = 1) -> abundance_t
+  
+#now prepare the trait dataframe 
+
+fd_traits %>% 
+  tibble::rownames_to_column() %>%  #rownames to columns
+  rename(Species = "rowname") -> traits_ready
+
+
+#merging datasets 
+left_join(traits_ready, abundance_t, by = "Species") -> merged_df_zoo
+
+#now we pass it into long format for data manipulation
+merged_df_zoo %>% 
+  pivot_longer(
+    cols = -c(Species:Reproduction.form),
+    names_to = "Code",
+    values_to = "abundance"
+  ) %>% 
+  #turning into factors as needed
+  mutate(abundance = as.double(abundance)) %>% 
+  mutate_if(is.character, as.factor) %>%
+  #grouping as by trophic group and code
+  group_by(Code, Feeding.type) %>%
+  #summarise the results to obtain all together
+  summarise(
+    total_sum = sum(abundance),
+    .groups = "drop"
+  ) %>% 
+  #transforming into wide format
+  pivot_wider(
+    names_from = Feeding.type,
+    values_from = total_sum
+  ) -> rda_traits
+
+
+#checking if both df has the same number of samples or reservoirs 
+
+setdiff(normalized_fd_envi$Code, rda_traits$Code)
+setdiff(rda_traits$Code, normalized_fd_envi$Code)
+
+
+#The problem with this name that we had before, 
+#nut now is a factor so we have to use this code
+
+levels(rda_traits$Code)[levels(rda_traits$Code) == "GALL2019"] <- "GAL2019"
+
+#removing from rda_traits the reservoirs that arenot in the normalized df
+#because were removed since the fd indices werent obtained since only one or two
+#species were present 
+
+rda_traits <- rda_traits %>% 
+  filter(!Code %in% c("CER2012", "GRA2024", "PEÑ2013", "SOB2013", "UTC2025"))
+
+#check again 
+setdiff(normalized_fd_envi$Code, rda_traits$Code)
+setdiff(rda_traits$Code, normalized_fd_envi$Code)
+
+#Now both required datasets are ready 
+
+#So we need to check first if is approapiate to do a RDA or CCA
+
+traits_dca <- decorana(rda_traits[,-1]) #without the code 
+eigenvals(traits_dca)
+
+#eigenvals functions indicates that DCA1 is 0.43 which is less than 3
+#hence a RDA is a better option than a CCA. 
+
 
 
