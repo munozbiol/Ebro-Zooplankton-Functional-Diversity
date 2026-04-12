@@ -1638,6 +1638,34 @@ merged_df_zoo %>%
   ) -> rda_traits
 
 
+
+
+#now we pass it into long format for data manipulation
+merged_df_zoo %>% 
+  pivot_longer(
+    cols = -c(Species:Reproduction.form),
+    names_to = "Code",
+    values_to = "abundance"
+  ) %>% 
+  #turning into factors as needed
+  mutate(abundance = as.double(abundance)) %>% 
+  mutate_if(is.character, as.factor) %>%
+  mutate(Biomass = Body.Weight*abundance) %>% 
+  #grouping as by trophic group and code
+  group_by(Code, Feeding.type) %>%
+  #summarise the results to obtain all together
+  summarise(
+    total_biomass = sum(Biomass),
+    .groups = "drop"
+  ) %>% 
+  #transforming into wide format
+  pivot_wider(
+    names_from = Feeding.type,
+    values_from = total_biomass
+  ) -> rda_traits_biomass
+
+
+#abundances 
 #checking if both df has the same number of samples or reservoirs 
 
 setdiff(normalized_fd_envi$Code, rda_traits$Code)
@@ -1672,3 +1700,448 @@ eigenvals(traits_dca)
 
 
 
+#biomass 
+#checking if both df has the same number of samples or reservoirs 
+
+setdiff(normalized_fd_envi$Code, rda_traits_biomass$Code)
+setdiff(rda_traits_biomass$Code, normalized_fd_envi$Code)
+
+
+#The problem with this name that we had before, 
+#nut now is a factor so we have to use this code
+
+levels(rda_traits_biomass$Code)[levels(rda_traits_biomass$Code) == "GALL2019"] <- "GAL2019"
+
+#removing from rda_traits_biomass the reservoirs that arenot in the normalized df
+#because were removed since the fd indices werent obtained since only one or two
+#species were present 
+
+rda_traits_biomass <- rda_traits_biomass %>% 
+  filter(!Code %in% c("CER2012", "GRA2024", "PEÑ2013", "SOB2013", "UTC2025"))
+
+#check again 
+setdiff(normalized_fd_envi$Code, rda_traits_biomass$Code)
+setdiff(rda_traits_biomass$Code, normalized_fd_envi$Code)
+
+#Now both required datasets are ready 
+
+#So we need to check first if is approapiate to do a RDA or CCA
+
+traits_dca_biomass <- decorana(rda_traits_biomass[,-1]) #without the code 
+eigenvals(traits_dca_biomass)
+
+#eigenvals functions indicates that DCA1 is 0.57 which is less than 3
+#hence a RDA is a better option than a CCA. 
+
+
+#RDA models #####
+
+#We will try with two models, the hellinger-transformed traits data 
+#and the distance-based model. The final model will be the one who 
+#provide more information 
+
+
+# Hellinger abundance
+
+library(vegan) 
+
+rda_traits %>% 
+  tibble::column_to_rownames(var = "Code") -> rda_traits
+
+
+traits.hellinger <- decostand(rda_traits,
+                              method = "hellinger")
+
+rda.model.hellinger <- rda(traits.hellinger ~.,
+                           data = normalized_fd_envi[,1:25]) #from chla until FDis
+
+
+summary(rda.model.hellinger , display = NULL)
+# Partitioning of variance
+# Constrained (proportion) 39.23%
+# con los fisicoquimicos se explica el 39.23% de la varianza
+# el eje uno explica el 18.41% de la varianza (del 39.23%), mientras que
+# el eje dos explica el 13.25% de la varianza (del 39.23%)
+# https://uw.pressbooks.pub/appliedmultivariatestatistics/chapter/rda-and-dbrda/
+
+
+
+#Selecting the important variables
+#Forward select
+
+rda.model.hellinger.fwd <- ordiR2step(rda(traits.hellinger ~ 1,
+                                    data = normalized_fd_envi[,1:25]),
+                                scope = formula(rda.model.hellinger),
+                                direction ="forward",
+                                R2scope = T,
+                                pstep = 1000,
+                                trace = F)
+
+#Variables that should be included in the new model
+rda.model.hellinger.fwd$call
+
+
+rda.model.hellinger.importants <- rda(formula = traits.hellinger ~ FDis + FDiv + Richness + Phytoplankton + 
+                                  Conduct + SS + Volume + Chla + Shannon + Alcalinity + Silicates + 
+                                  Temp + Depth, data = normalized_fd_envi[,1:25])
+
+#ahora vemos el summary de este modelo
+summary(rda.model.hellinger.importants)
+
+# Partitioning of variance
+# Constrained (proportion) 35.44%
+# con las variables se explica el 35.44% de la varianza
+# el eje uno explica el 17.01% de la varianza (del 35.44%), mientras que
+# el eje dos explica el 12.25% de la varianza (del 35.44%%)
+# https://uw.pressbooks.pub/appliedmultivariatestatistics/chapter/rda-and-dbrda/
+
+#checking significance
+anova.cca(rda.model.hellinger)
+anova.cca(rda.model.hellinger.importants)
+
+#Both are significant p = 0.001
+
+#Plotting 
+
+#Since summary is obsoleted to extract variables, now we will update the previous RDA code that i used before 
+
+ii <- scores(rda.model.hellinger.importants)
+
+# extracting values
+sp <- as.data.frame(scores(ii$species))
+st <- as.data.frame(scores(ii$sites))
+yz <- as.data.frame(scores(ii$biplot))
+rda.scores <- summary(rda.model.hellinger.importants)
+
+library(ggvegan)
+library(ggplot2)
+library(ggrepel)
+
+#Hellinger plot
+
+(rda.plot.hellinger <- 
+ggplot() +
+  geom_point(data = st,
+             aes(x = RDA1,
+                 y = RDA2,
+                 colour = normalized_fd_envi$Trophic.state,
+                 shape = normalized_fd_envi$Type),
+             size = 4.5) +
+  geom_vline(xintercept = c(0), color = "black", linetype = 2) +
+  geom_hline(yintercept = c(0), color = "black", linetype = 2) +
+  geom_segment(data = sp,
+               aes(x = 0, y = 0, xend = RDA1, yend = RDA2), 
+               arrow = arrow(angle=22.5,length = unit(0.35,"cm"),
+                             type = "closed"),
+               linetype=1.25, 
+               size=1.25,
+               colour = "brown3") +
+  geom_text_repel(data = sp, 
+                  aes(RDA1,RDA2,
+                      label=row.names(sp)),
+                  size = 7,
+                  fontface = "italic")+
+  geom_segment(data = yz,
+               aes(x = 0, y = 0, xend = RDA1, yend = RDA2), 
+               arrow = arrow(angle=22.5,length = unit(0.35,"cm"),
+                             type = "closed"),
+               linetype=1.25,
+               size=1.25,
+               colour = "navy")+
+  geom_text_repel(data = yz,
+                  aes(RDA1,RDA2,
+                      label=row.names(yz)),
+                  size = 7)+
+  labs(x = paste("RDA1 (", round(100 * rda.scores$cont$importance[2,1], 1), "%)", sep = ""),
+       y = paste("RDA2 (", round(100 * rda.scores$cont$importance[2,2], 1), "%)", sep = ""),
+       color = "Trophic state",
+       shape = "Type") +
+  theme_bw()+
+  theme(panel.grid=element_blank(),
+        legend.position = c(0.8, 0.99), # primero es X (ancho) y segundo es Y (alto)
+        legend.justification = c(0, 1),
+        legend.text = element_text(size = 18),
+        legend.title = element_text(size = 18),
+        axis.line = element_line(color = "black"),
+        axis.text.x = element_text(size = 15, face = "bold", color = "black"),
+        axis.text.y = element_text(size = 15, face = "bold", color = "black"),
+        text = element_text(size = 17.5, face = "bold", color = "black")) +
+    guides(color = guide_legend(ncol = 1), # only in one column
+           shape = guide_legend(ncol = 3)) +
+  scale_color_manual(values = c(
+    "Oligotrophic" = "dodgerblue3",
+    "Mesotrophic" = "gold3",
+    "Eutrophic" = "darkolivegreen",
+    "Hypereutrophic" = "firebrick")) +
+  scale_shape_manual(values = c(
+    "1"  = 15,
+    "7"  = 16,
+    "9"  = 17,
+    "10" = 18,
+    "11" = 19,
+    "12" = 20,
+    "13" = 8))
+  )
+
+
+
+# Hellinger Biomass #####
+
+#results, no much informative than the abundance model.
+#Therefore, we will use the abundance model as final
+
+
+library(vegan) 
+
+rda_traits_biomass %>% 
+  tibble::column_to_rownames(var = "Code") -> rda_traits_biomass
+
+
+traits.hellinger.biomass <- decostand(rda_traits_biomass,
+                              method = "hellinger")
+
+rda.model.hellinger.biomass <- rda(traits.hellinger.biomass ~.,
+                           data = normalized_fd_envi[,1:25]) #from chla until FDis
+
+
+summary(rda.model.hellinger.biomass , display = NULL)
+# Partitioning of variance
+# Constrained (proportion) 33.16%
+# con los fisicoquimicos se explica el 33.16% de la varianza
+# el eje uno explica el 19.27% de la varianza (del 33.16%), mientras que
+# el eje dos explica el 06.58% de la varianza (del 33.16%)
+# https://uw.pressbooks.pub/appliedmultivariatestatistics/chapter/rda-and-dbrda/
+
+
+
+#Selecting the important variables
+#Forward select
+
+rda.model.hellinger.biomass.fwd <- ordiR2step(rda(traits.hellinger.biomass ~ 1,
+                                          data = normalized_fd_envi[,1:25]),
+                                      scope = formula(rda.model.hellinger.biomass),
+                                      direction ="forward",
+                                      R2scope = T,
+                                      pstep = 1000,
+                                      trace = F)
+
+#Variables that should be included in the new model
+rda.model.hellinger.biomass.fwd$call
+
+
+rda.model.hellinger.biomass.importants <- rda(formula = traits.hellinger.biomass ~ FDis + Conduct + Silicates + 
+                                        Secchi + Richness + FDiv + Alcalinity + Phycocianin + Chla + 
+                                        Shannon + Phytoplankton + Volume + Temp + Fito.Biomasa,
+                                      data = normalized_fd_envi[,1:25])
+
+#ahora vemos el summary de este modelo
+summary(rda.model.hellinger.biomass.importants)
+
+# Partitioning of variance
+# Constrained (proportion) 30.29%
+# con las variables se explica el 30.29% de la varianza
+# el eje uno explica el 18.61% de la varianza (del 30.29%), mientras que
+# el eje dos explica el 05.68% de la varianza (del 30.29%%)
+# https://uw.pressbooks.pub/appliedmultivariatestatistics/chapter/rda-and-dbrda/
+
+#checking significance
+anova.cca(rda.model.hellinger.biomass)
+anova.cca(rda.model.hellinger.biomass.importants)
+
+#Both are significant p = 0.001
+
+#Plotting 
+
+#Since summary is obsoleted to extract variables, now we will update the previous RDA code that i used before 
+
+ii.biomass <- scores(rda.model.hellinger.biomass.importants)
+
+# extracting values
+sp.biomass <- as.data.frame(scores(ii.biomass$species))
+st.biomass <- as.data.frame(scores(ii.biomass$sites))
+yz.biomass <- as.data.frame(scores(ii.biomass$biplot))
+rda.scores.biomass <- summary(rda.model.hellinger.biomass.importants)
+
+library(ggvegan)
+library(ggplot2)
+library(ggrepel)
+
+#Hellinger plot
+
+(rda.plot.hellinger.biomass <- 
+    ggplot() +
+    geom_point(data = st.biomass,
+               aes(x = RDA1,
+                   y = RDA2,
+                   colour = normalized_fd_envi$Trophic.state,
+                   shape = normalized_fd_envi$Type),
+               size = 4.5) +
+    geom_vline(xintercept = c(0), color = "black", linetype = 2) +
+    geom_hline(yintercept = c(0), color = "black", linetype = 2) +
+    geom_segment(data = sp.biomass,
+                 aes(x = 0, y = 0, xend = RDA1, yend = RDA2), 
+                 arrow = arrow(angle=22.5,length = unit(0.35,"cm"),
+                               type = "closed"),
+                 linetype=1.25, 
+                 size=1.25,
+                 colour = "brown3") +
+    geom_text_repel(data = sp.biomass, 
+                    aes(RDA1,RDA2,
+                        label=row.names(sp.biomass)),
+                    size = 7,
+                    fontface = "italic")+
+    geom_segment(data = yz.biomass,
+                 aes(x = 0, y = 0, xend = RDA1, yend = RDA2), 
+                 arrow = arrow(angle=22.5,length = unit(0.35,"cm"),
+                               type = "closed"),
+                 linetype=1.25,
+                 size=1.25,
+                 colour = "navy")+
+    geom_text_repel(data = yz.biomass,
+                    aes(RDA1,RDA2,
+                        label=row.names(yz.biomass)),
+                    size = 7)+
+    labs(x = paste("RDA1 (", round(100 * rda.scores$cont$importance[2,1], 1), "%)", sep = ""),
+         y = paste("RDA2 (", round(100 * rda.scores$cont$importance[2,2], 1), "%)", sep = ""),
+         color = "Trophic state",
+         shape = "Type") +
+    theme_bw()+
+    theme(panel.grid=element_blank(),
+          legend.position = c(0.01, 0.99), # primero es X (ancho) y segundo es Y (alto)
+          legend.justification = c(0, 1),
+          legend.text = element_text(size = 18),
+          legend.title = element_text(size = 18),
+          axis.line = element_line(color = "black"),
+          axis.text.x = element_text(size = 15, face = "bold", color = "black"),
+          axis.text.y = element_text(size = 15, face = "bold", color = "black"),
+          text = element_text(size = 17.5, face = "bold", color = "black")) +
+    guides(color = guide_legend(ncol = 1), # only in one column
+           shape = guide_legend(ncol = 3)) +
+    scale_color_manual(values = c(
+      "Oligotrophic" = "dodgerblue3",
+      "Mesotrophic" = "gold3",
+      "Eutrophic" = "darkolivegreen",
+      "Hypereutrophic" = "firebrick")) +
+    scale_shape_manual(values = c(
+      "1"  = 15,
+      "7"  = 16,
+      "9"  = 17,
+      "10" = 18,
+      "11" = 19,
+      "12" = 20,
+      "13" = 8))
+)
+
+
+#not useful 
+#distance based rda
+
+
+dbRDA.traits <- capscale(rda_traits ~.,
+                            data=normalized_fd_envi[,1:25],
+                            distance = "bray")
+
+
+summary(dbRDA.traits)
+#constrained 27.01%
+#unconstrained 72.99%
+
+
+dbRDA.traits.fwd <- ordiR2step(capscale(rda_traits ~ 1,
+                                        data=normalized_fd_envi[,1:25],
+                                        distance = "bray"),
+                                  scope = formula(dbRDA.traits),
+                                  direction ="forward",
+                                  R2scope = T,
+                                  pstep = 1000,
+                                  trace = F)
+
+
+dbRDA.traits.fwd
+#te indica y deja cuales son las variables significantes
+
+
+dbRDA.traits.importants <- capscale(formula = rda_traits ~ 
+                                      FDis + Richness + Shannon +
+                                      FDiv + Chla + SS + Conduct +
+                                      Silicates + Secchi + Alcalinity +
+                                      reservoir.percentage + Temp +
+                                      Turbidity + FEve,
+                                    data = normalized_fd_envi[, 1:25],
+                                    distance = "bray")
+
+
+
+anova.cca(dbRDA.traits)
+anova.cca(dbRDA.traits.importants)
+# both models are significant p = 0.001
+
+
+# tambien podemos ver cuales son los ejes que son significantes, si al menos los primeros
+# dos lo son (que son los que son uso normalmente supongo estaria bien)
+
+anova.cca(dbRDA.traits, by= "axis", step =1000)
+
+anova.cca(dbRDA.traits.importants, by = "axis", step=1000)
+
+#yes in both models first two axis are significants
+
+
+plot(dbRDA_microcosm)
+
+i.i <- scores(dbRDA.traits.importants)
+s.p <- as.data.frame(i.i$species[,1:2])
+s.t <- as.data.frame(i.i$sites[,1:2])
+y.z <- as.data.frame(i.i$biplot[,1:2])
+dbrda.scores <- summary(dbRDA.traits.importants)
+
+
+
+ggplot() +
+  geom_point(data = s.t,
+             aes(x = CAP1,
+                 y = CAP2,
+                 colour = normalized_fd_envi$Trophic.state),
+             size = 3) +
+  geom_vline(xintercept = c(0),
+             color = "grey",
+             linetype = 2) +
+  geom_hline(yintercept = c(0),
+             color = "grey",
+             linetype = 2) +
+  geom_segment(data = s.p,
+               aes(x = 0, y = 0, xend = CAP1, yend = CAP2), 
+               arrow = arrow(angle=22.5,length = unit(0.35,"cm"),
+                             type = "closed"),
+               linetype=1,
+               size=1,
+               colour = "brown3") +
+  geom_text_repel(data = s.p,
+                  aes(CAP1,
+                      CAP2,
+                      label=row.names(s.p)),
+                  size = 5,
+                  fontface = "italic")+
+  geom_segment(data = y.z,
+               aes(x = 0, y = 0, xend = CAP1, yend = CAP2), 
+               arrow = arrow(angle=22.5,length = unit(0.35,"cm"), type = "closed"),
+               linetype=1,
+               size=1,
+               colour = "navy")+
+  geom_text_repel(data = y.z,
+                  aes(CAP1,CAP2,
+                      label=row.names(y.z)),
+                  size = 5)+
+  labs(x = paste("dbRDA1 (", round(100 * dbrda.scores$cont$importance[2,1], 1), "%)", sep = ""),
+       y = paste("dbRDA2 (", round(100 * dbrda.scores$cont$importance[2,2], 1), "%)", sep = ""),
+       title = "dbRDA")+
+  theme_bw()+
+  theme(panel.grid=element_blank(),
+        legend.position = c(0.85, 0.95), # primero es X (ancho) y segundo es Y (alto)
+        legend.justification = c(0, 1),
+        legend.text = element_text(size = 14),
+        legend.title = element_text(size = 16))
+
+
+#Results:
+#is better the RDA based on hellinger transformation and is the choosen as final RDA
