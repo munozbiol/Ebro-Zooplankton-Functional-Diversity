@@ -19,6 +19,9 @@ getwd()
 #Load the libraries ####
 
 library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(tibble)
 library(FD)
 library(missForest)
 library(party)
@@ -27,24 +30,32 @@ library(permimp)
 library(usdm)
 library(mgcv)
 library(itsadug)
-library(ggplot2)
 library(gratia)
+library(httpgd)
+
+#Visualizing the plots in the R session with httpgd
+httpgd::hgd() #to follow the link and open a new window where the plots will be shown.
+httpgd::hgd_browse() #to open a window in VScode where the plots will be shown.
+
 
 # Load the data ####
 
 #To perform the analysis, you need two data frames: 
 #one with the abundance data and another with the trait data.
 
-#Load the abundance data 
+#Load the abundance data
 #this df must have the species as columns and sites as rows 
 
-abundance_raw <- read.csv("matrix_abundancias_t.csv", row.names = 1)
+abundance_raw <- read.csv("matrix_abundancias_t.csv", 
+                          row.names = 1)
 
 View(abundance_raw)
 
 #Load the trait data
 
-fd_traits <- read.csv("Rasgosfuncionales_allspecies.csv", header = T, row.names = 1)
+fd_traits <- read.csv("Rasgosfuncionales_allspecies.csv",
+                      header = TRUE,
+                       row.names = 1)
 
 str(fd_traits)
 
@@ -104,11 +115,11 @@ str(fd_traits)
 
 #new try
 fd_results <- dbFD(fd_traits, abundance_raw)
-#success! now we have our results 
+#success! now we have our results
 
 
 #There is a problem with fric. It cannont be calculated if in one reservoir are less 
-# than three different functional species. So first we need to check if in all 
+# than three different functional species. So first we need to check if in all
 #reservoirs we have at least three species.
 
 #obtaining the reservoirs with less than five species just to check 
@@ -121,18 +132,20 @@ abundance_raw %>%
                           collapse = ", ")) %>%
   select(Embalse, Richness, Especies) -> few_species_reservoirs
 
-#Anyway the results of FD in those reservoirs are NA, so when do it any other analyses 
-#they will be removed.
+#Anyway the results of FD in those reservoirs are NA 
+#so when do it any other analyses they will be removed.
 
 #Saving the results
 
-#Una ves que obtuvimos datos correctos, nos da una gran cantidad de información, asi que, que hacemos con esto?. Pues guardamos los indices más importantes como un nuevo dataframes para poder verlos y compararlos màs agusto.
+#Una ves que obtuvimos datos correctos, nos da una gran cantidad de información
+#asi que, que hacemos con esto? Pues guardamos los indices más importantes como
+#un nuevo dataframes para poder verlos y compararlos màs agusto.
 
 fd_indices <- cbind(fd_results$nbsp,
                     fd_results$FRic,
                     fd_results$FEve,
                     fd_results$FDiv,
-                    fd_results$FDis, 
+                    fd_results$FDis,
                     fd_results$RaoQ)
 
 colnames(fd_indices) <- c("NumbSpecies", "FRic", "FEve", "FDiv", "FDis", "Rao")
@@ -155,7 +168,9 @@ head(fd_indices)
 # environmental variables ####
 
 #load the environmental data
-envi_raw <- read.csv("environmental_data.csv", header = T, row.names = 1)
+envi_raw <- read.csv("environmental_data.csv",
+                     header = TRUE,
+                     row.names = 1)
 
 str(envi_raw)
 
@@ -231,7 +246,8 @@ setdiff(rownames(fd_indices), rownames(envi_complete))
 
 library(vegan)
 
-#now we obtain the different indices using the diversity function from the vegan package.
+#now we obtain the different indices using the diversity function 
+#from the vegan package.
 
  data.frame(
   Shannon = diversity(abundance_raw, index = "shannon"),
@@ -313,7 +329,7 @@ vifstep(normalized_fd_envi[,-c(34:43)], th = 10)
 #Photic zone with Secchi. Removed photic zone.
 # Volumen with volume max, removed volume.max
 
-normalized_fd_envi %>% 
+normalized_fd_envi %>%
   select(-c(NumbSpecies, Simpson, Pielous, Rao, Nitrite, TN,
             Photic.Zone, volume.max)) -> normalized_fd_envi
 
@@ -323,16 +339,19 @@ vifstep(normalized_fd_envi[,-c(26:35)], th = 10)
 #No variable from the 25 input variables has collinearity problem. 
 
 
-normalized_fd_envi %>% 
-  mutate(Type = as.factor(Type )) -> normalized_fd_envi
+normalized_fd_envi %>%
+  mutate(Type = as.factor(Type)) -> normalized_fd_envi
 
 
 normalized_fd_envi %>% 
-  mutate(Trophic.state = factor(Trophic.state, 
+  mutate(Trophic.state = factor(Trophic.state,
                                    levels = c("Oligotrophic",
                                               "Mesotrophic",
                                               "Eutrophic",
-                                              "Hypereutrophic") )) -> normalized_fd_envi
+                                              "Hypereutrophic"))) -> normalized_fd_envi
+
+levels(normalized_fd_envi$Trophic.state)
+View(normalized_fd_envi)
 
 
 # PCA #####
@@ -347,16 +366,16 @@ library(FactoMineR)
 
 #PCA function 
 
-PCA_fd_envi <- PCA(normalized_fd_envi[-c(26:35)],
+PCA_fd_envi <- PCA(normalized_fd_envi[-c(19:38)],
                    graph = T,
                    scale.unit = T)
 
 #checking resuls
 summary(PCA_fd_envi)
 
-# 21.12% and 11.67 of variance explained by the two first axes
+# 28.14% and 14.89 of variance explained by the two first axes
 
-fviz_eig(PCA_fd_envi, addlabels = TRUE, ylim = c(0, 25))
+fviz_eig(PCA_fd_envi, addlabels = TRUE, ylim = c(0, 30))
 
 
 
@@ -439,7 +458,7 @@ ggplot() +
   geom_text_repel(
     data = vars,
     aes(x = Dim.1, y = Dim.2, label = variable),
-    size = 7,
+    size = 8,
     color = "black",
     segment.color = "grey60",
     max.overlaps = Inf
@@ -481,7 +500,9 @@ ggplot() +
     "13" = 8
   ))
 
-#PCA fig saved in 1300*790 size
+#Saving plot
+
+#figure saved as 1300*790 size svg file
 
 
 #By only type
@@ -530,8 +551,7 @@ ggplot() +
   guides(color = guide_legend(nrow = 1, byrow = T))
 
 
-#PCA fig saved in 1300*790 size
-
+#fig not needed
 
 #random forest approach  ####
 
@@ -1087,6 +1107,7 @@ normalized_fd_envi %>%
     Year = as.factor(Year)
   ) -> normalized_fd_envi
 
+View(normalized_fd_envi)
 
 #Now we can try new models to check if they makes any difference 
 
@@ -1592,7 +1613,8 @@ str(abundance_raw)
 View(fd_traits)
 
 
-#First is need to bring the abundance data for each species and adding into the traits df 
+#First is need to bring the abundance data for each species
+# and adding into the traits df 
 
 #preparing the abundance df 
 
@@ -1614,7 +1636,7 @@ fd_traits %>%
 #merging datasets 
 left_join(traits_ready, abundance_t, by = "Species") -> merged_df_zoo
 
-#now we pass it into long format for data manipulation
+#now we pass it into long format for abundance data manipulation
 merged_df_zoo %>% 
   pivot_longer(
     cols = -c(Species:Reproduction.form),
@@ -1640,7 +1662,7 @@ merged_df_zoo %>%
 
 
 
-#now we pass it into long format for data manipulation
+#now we pass it into long format for biomass data manipulation
 merged_df_zoo %>% 
   pivot_longer(
     cols = -c(Species:Reproduction.form),
@@ -1813,13 +1835,13 @@ st <- as.data.frame(scores(ii$sites))
 yz <- as.data.frame(scores(ii$biplot))
 rda.scores <- summary(rda.model.hellinger.importants)
 
-library(ggvegan)
+
 library(ggplot2)
 library(ggrepel)
 
 #Hellinger plot
 
-(rda.plot.hellinger <- 
+rda.plot.hellinger <- 
 ggplot() +
   geom_point(data = st,
              aes(x = RDA1,
@@ -1840,7 +1862,8 @@ ggplot() +
                   aes(RDA1,RDA2,
                       label=row.names(sp)),
                   size = 7,
-                  fontface = "italic")+
+                  fontface = "italic",
+                  max.overlaps = Inf)+
   geom_segment(data = yz,
                aes(x = 0, y = 0, xend = RDA1, yend = RDA2), 
                arrow = arrow(angle=22.5,length = unit(0.35,"cm"),
@@ -1851,7 +1874,8 @@ ggplot() +
   geom_text_repel(data = yz,
                   aes(RDA1,RDA2,
                       label=row.names(yz)),
-                  size = 7)+
+                  size = 7,
+                  max.overlaps = Inf)+
   labs(x = paste("RDA1 (", round(100 * rda.scores$cont$importance[2,1], 1), "%)", sep = ""),
        y = paste("RDA2 (", round(100 * rda.scores$cont$importance[2,2], 1), "%)", sep = ""),
        color = "Trophic state",
@@ -1881,7 +1905,9 @@ ggplot() +
     "11" = 19,
     "12" = 20,
     "13" = 8))
-  )
+  
+
+  print(rda.plot.hellinger)
 
 
 
@@ -2143,5 +2169,9 @@ ggplot() +
         legend.title = element_text(size = 16))
 
 
+
+#Results:
+#is better the RDA based on hellinger transformation and is the choosen as final RDA#Results:
+#is better the RDA based on hellinger transformation and is the choosen as final RDA
 #Results:
 #is better the RDA based on hellinger transformation and is the choosen as final RDA
