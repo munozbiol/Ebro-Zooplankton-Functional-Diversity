@@ -1,14 +1,14 @@
 # Zooplankton Functional Diversity in Ebro Reservoirs
 
-This repository contains the R statistical workflow to analyze **zooplankton functional diversity** in the Ebro River basin reservoirs. The primary objective is to evaluate how community functional traits respond to environmental, spatial, and temporal gradients.
+This repository contains the R statistical workflow to analyze **zooplankton functional diversity** in the Ebro basin reservoirs. The primary objective is to evaluate how community functional diversity indices respond to environmental, spatial, and temporal gradients.
 
-## 📋 Project Summary
+## Project Summary
 
-The study utilizes a trait-based ecology approach to go beyond classical taxonomy. It analyzes abundance data and functional traits (feeding type, body weight, reproduction form, etc.) alongside complex physicochemical variables.
+The study utilizes a trait-based ecology approach to go beyond classical taxonomy. It analyzes abundance data and functional traits (feeding type, body weight, reproduction form, etc.) alongside morphometric and physicochemical variables.
 
-## 🛠️ Workflow
+##Workflow
 
-The R script is organized into the following critical stages:
+The R script is organized into the following  stages:
 
 ### 1. Data Preprocessing and Curation
 *   **Taxonomy Cleaning:** Standardizing names between abundance and trait matrices to ensure compatibility with the `FD` package.
@@ -23,6 +23,16 @@ The R script is organized into the following critical stages:
 *   **PCA (Principal Component Analysis):** Visualization of main environmental gradients (eutrophication and mineralization) grouped by trophic state and reservoir type.
 *   **RDA (Redundancy Analysis):** Direct relationship between functional groups and environmental variables using **Hellinger** transformation.
 
+## 📊 Visualización de Resultados
+
+![PCA Plot](Figures/PCA%20by%20trophic%20state%20png.png)
+*Figure 1: PCA plot of reservoirs environmental data.*
+
+![RDA Plot](Figures/RDA%20Abundance%20Hellinger%20png.png)
+*Figure 2: RDA plot of reservoirs environmental data, functional diversity indices and traits.*
+
+
+
 ### 4. Variable Selection (Machine Learning)
 *   Use of **Conditional Random Forest (`cforest`)** and conditional permutation importance (`permimp`) to identify the environmental predictors with the greatest influence on each diversity index, avoiding overfitting.
 
@@ -31,7 +41,11 @@ The R script is organized into the following critical stages:
 *   **Fixed Effects:** Selected environmental variables (Conductivity, Chlorophyll-a, Suspended Solids, etc.).
 *   **Random Effects:** Modeling the hierarchical structure of the data by including *Reservoir*, *Year*, *Location*, and *Type* as random factors to control for spatial and temporal dependence.
 
-## 📦 Key Libraries
+
+![GAMMs plot](Figures/GAMMs%20plot%20normalized%20in%20png.png)
+*Figure 3: GAMMs plot of best environmental predictors for each functional diversity index.*
+
+## Key Libraries
 
 The analysis relies on the following R libraries:
 *   `FD`: Calculation of functional indices.
@@ -40,12 +54,12 @@ The analysis relies on the following R libraries:
 *   `party` & `permimp`: Random Forest for variable selection.
 *   `ggplot2`, `factoextra` & `ggrepel`: Advanced data visualization.
 
-## 📊 Key Findings
+## Key Findings
 
 The analysis reveals that:
 1.  **Conductivity** and **trophic state** are the primary drivers of functional structure.
 2.  There is significant **interannual** variability, suggesting the influence of stochastic events (droughts/floods).
-3.  Reservoir morphometry (depth and volume) plays a secondary but relevant role in functional richness.
+3.  Reservoir morphometry (depth and volume) plays a secondary but relevant role in functional diversity indices.
 
 ---
 *This project is part of the research for the AIL congress and associated publications at the Universitat de València.*
