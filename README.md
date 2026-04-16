@@ -1,14 +1,14 @@
 # Zooplankton Functional Diversity in Ebro Reservoirs
 
-This repository contains the R statistical workflow to analyze **zooplankton functional diversity** in the Ebro Basin reservoirs. The primary objective is to evaluate how community functional indices respond to environmental, spatial, and temporal gradients.
+This repository contains the R statistical workflow to analyze **zooplankton functional diversity** in the Ebro River basin reservoirs. The primary objective is to evaluate how community functional traits respond to environmental, spatial, and temporal gradients.
 
-## Project Summary
+## 📋 Project Summary
 
-The study utilizes a trait-based ecology approach to go beyond classical taxonomy. It analyzes abundance data and functional traits (feeding type, body weight, reproduction form, etc.) alongside environmental and physicochemical variables.
+The study utilizes a trait-based ecology approach to go beyond classical taxonomy. It analyzes abundance data and functional traits (feeding type, body weight, reproduction form, etc.) alongside complex physicochemical variables.
 
-## Workflow
+## 🛠️ Workflow
 
-The R script is organized into the following stages:
+The R script is organized into the following critical stages:
 
 ### 1. Data Preprocessing and Curation
 *   **Taxonomy Cleaning:** Standardizing names between abundance and trait matrices to ensure compatibility with the `FD` package.
@@ -17,14 +17,11 @@ The R script is organized into the following stages:
 
 ### 2. Diversity Indices Calculation
 *   **Functional Diversity (Alpha):** Calculation of Functional Richness (FRic), Evenness (FEve), Divergence (FDiv), Dispersion (FDis), and Rao's Entropy (RaoQ).
-*   **Taxonomic Diversity:** Shannon, Simpson, and Species Richness indices via `vegan`package.
+*   **Taxonomic Diversity:** Shannon, Simpson, and Species Richness indices via `vegan`.
 
 ### 3. Multivariate Analysis
 *   **PCA (Principal Component Analysis):** Visualization of main environmental gradients (eutrophication and mineralization) grouped by trophic state and reservoir type.
-*   **RDA (Redundancy Analysis):** Direct relationship between functional groups, functional indices and environmental variables using **Hellinger** transformation.
-
-![PCA Analysis](Figures/PCA by trophic state png.png)
-![RDA plot](Figures/RDA Abundance Hellinger png.png)
+*   **RDA (Redundancy Analysis):** Direct relationship between functional groups and environmental variables using **Hellinger** transformation.
 
 ### 4. Variable Selection (Machine Learning)
 *   Use of **Conditional Random Forest (`cforest`)** and conditional permutation importance (`permimp`) to identify the environmental predictors with the greatest influence on each diversity index, avoiding overfitting.
@@ -34,9 +31,7 @@ The R script is organized into the following stages:
 *   **Fixed Effects:** Selected environmental variables (Conductivity, Chlorophyll-a, Suspended Solids, etc.).
 *   **Random Effects:** Modeling the hierarchical structure of the data by including *Reservoir*, *Year*, *Location*, and *Type* as random factors to control for spatial and temporal dependence.
 
-![GAMMs plots](Figures/GAMMs plot normalized in png.png.png)
-
-## Key Libraries
+## 📦 Key Libraries
 
 The analysis relies on the following R libraries:
 *   `FD`: Calculation of functional indices.
@@ -45,12 +40,12 @@ The analysis relies on the following R libraries:
 *   `party` & `permimp`: Random Forest for variable selection.
 *   `ggplot2`, `factoextra` & `ggrepel`: Advanced data visualization.
 
-## Key Findings
+## 📊 Key Findings
 
 The analysis reveals that:
 1.  **Conductivity** and **trophic state** are the primary drivers of functional structure.
 2.  There is significant **interannual** variability, suggesting the influence of stochastic events (droughts/floods).
-3.  Reservoir morphometry (depth and volume) plays a secondary but relevant role in functional diversity indices
+3.  Reservoir morphometry (depth and volume) plays a secondary but relevant role in functional richness.
 
 ---
 *This project is part of the research for the AIL congress and associated publications at the Universitat de València.*
