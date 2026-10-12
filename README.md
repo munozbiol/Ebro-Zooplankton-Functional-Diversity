@@ -21,14 +21,14 @@ The R script is organized into the following  stages:
 
 ### 3. Multivariate Analysis
 *   **PCA (Principal Component Analysis):** Visualization of main environmental gradients (eutrophication and mineralization) grouped by trophic state and reservoir type.
-*   **RDA (Redundancy Analysis):** Direct relationship between functional groups and environmental variables using **Hellinger** transformation.
+*   **RDA (Redundancy Analysis):** Relationship between CWM traits and environmental variables. Functional Diversity indices added passively.
 
 ## 📊 Visualización de Resultados
 
 ![PCA Plot](Figures/PCA%20by%20trophic%20state%20png.png)
 *Figure 1: PCA plot of reservoirs environmental data.*
 
-![RDA Plot](Figures/RDA%20Abundance%20Hellinger%20png.png)
+![RDA Plot](Figures/CWM%20RDA%20png.png)
 *Figure 2: RDA plot of reservoirs environmental data, functional diversity indices and traits.*
 
 
