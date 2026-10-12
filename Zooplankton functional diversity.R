@@ -1695,7 +1695,7 @@ setdiff(rda_traits$Code, normalized_fd_envi$Code)
 
 
 #The problem with this name that we had before, 
-#nut now is a factor so we have to use this code
+#but now is a factor so we have to use this code
 
 levels(rda_traits$Code)[levels(rda_traits$Code) == "GALL2019"] <- "GAL2019"
 
@@ -1757,6 +1757,204 @@ eigenvals(traits_dca_biomass)
 
 
 #RDA models #####
+
+#the follow model is the correct one since takes into account the CWM data
+
+#using the CWM data
+
+
+# a) misma matriz de abundancias y misma tabla de rasgos que usaste en dbFD()
+abundance_cwm <- abundance_raw
+rownames(abundance_cwm)[rownames(abundance_cwm) == "GALL2019"] <- "GAL2019"
+
+
+# b) mismas muestras y MISMO ORDEN que la tabla ambiental (se empareja por nombre)
+abundance_cwm <- abundance_cwm[rownames(normalized_fd_envi), ]
+
+# c) el peso corporal abarca varios ordenes de magnitud -> log10 antes de promediar
+traits_cwm <- fd_traits
+traits_cwm$Body.Weight <- log10(traits_cwm$Body.Weight)
+
+
+# d) CWM: rasgo numerico -> media ponderada por abundancia
+#         rasgo factor   -> abundancia relativa de cada categoria
+cwm <- functcomp(x = traits_cwm,
+                 a = as.matrix(abundance_cwm),
+                 CWM.type = "all")
+
+names(cwm)     # los nombres salen como Rasgo_Categoria: revisalos
+summary(cwm)   # categorias casi ausentes aportan ruido: valora quitarlas
+
+# e) rasgos binarios (habitat, reproduccion) generan dos columnas perfectamente
+
+#    colineales (p + (1 - p) = 1): deja solo una categoria de cada uno.
+
+#    AJUSTA estos nombres a lo que muestre names(cwm).
+drop_cols <- c("Habitat_Littoral", "Reproduction.form_Sexual", "Habitat_Littoral",
+               "Habitat_Pelagic", "Reproduction.form_Asexual")
+
+stopifnot(all(drop_cols %in% names(cwm)))
+cwm_rda <- cwm[, !(names(cwm) %in% drop_cols)]
+
+stopifnot(!anyNA(cwm_rda),
+          identical(rownames(cwm_rda), rownames(normalized_fd_envi)))
+
+
+# 2. Variables explicativas: SOLO ambientales y morfometricas ####
+# Los indices de diversidad funcional se calculan con los mismos rasgos y
+# abundancias que la respuesta, asi que NO deben ser predictores (circularidad).
+
+fd_idx_names <- c("Shannon", "Richness", "FRic", "FEve", "FDiv", "FDis")
+
+env_only <- normalized_fd_envi[, setdiff(names(normalized_fd_envi)[1:25],
+                                         fd_idx_names)]
+
+
+# 3. RDA sobre la tabla CWM ####
+# No uses Hellinger aqui: la tabla mezcla proporciones y una media logaritmica.
+# scale = TRUE estandariza cada columna CWM (RDA basado en correlaciones).
+
+rda.cwm.full <- rda(cwm ~ ., data = env_only, scale = TRUE)
+RsquareAdj(rda.cwm.full)
+anova.cca(rda.cwm.full, permutations = 999)
+
+# seleccion forward; el objeto devuelto ya ES el modelo final
+rda.cwm.fwd <- ordiR2step(rda(cwm ~ 1, data = env_only, scale = TRUE),
+                          scope = formula(rda.cwm.full),
+                          direction = "forward",
+                          R2scope = TRUE,
+                          permutations = 999,
+                          trace = FALSE)
+
+rda.cwm.fwd$call
+rda.cwm.fwd$anova
+rda.cwm.final <- rda.cwm.fwd
+
+vif.cca(rda.cwm.final)           # idealmente < 5 (como maximo 10)
+RsquareAdj(rda.cwm.final)
+anova.cca(rda.cwm.final, permutations = 999)
+anova.cca(rda.cwm.final, by = "axis",   permutations = pseudo_replication)
+anova.cca(rda.cwm.final, by = "margin", permutations = pseudo_replication)
+
+# Las muestras del mismo embalse no son independientes. Opcion mas conservadora:
+pseudo_replication = how(nperm = 999, blocks = normalized_fd_envi$Reservoir)
+
+
+summary(rda.cwm.final)  # eigenvalues, proporciones de varianza, correlaciones
+
+# 4. Indices de diversidad funcional como variables suplementarias (pasivas) ####
+
+fd_idx  <- normalized_fd_envi[, fd_idx_names]
+fit_idx <- envfit(rda.cwm.final, fd_idx, permutations = 999, scaling = 2)
+fit_idx   # r2 y p de cada indice sobre la ordenacion
+
+
+# 5. Triplot: sitios + CWM (respuesta) + ambientales + indices ####
+
+sc <- scores(rda.cwm.final,
+             display = c("sites", "species", "bp"),
+             scaling = 2, choices = 1:2)
+
+st <- as.data.frame(sc$sites)     # muestras
+sp <- as.data.frame(sc$species)   # columnas CWM (rasgos)
+bp <- as.data.frame(sc$biplot)    # variables ambientales
+ix <- as.data.frame(scores(fit_idx, display = "vectors"))  # indices (pasivos)
+
+# mismo factor de escala para las tres familias de flechas (solo estetico)
+mul <- 0.8 * min(
+  max(abs(st$RDA1)) / max(abs(c(sp$RDA1, bp$RDA1, ix$RDA1))),
+  max(abs(st$RDA2)) / max(abs(c(sp$RDA2, bp$RDA2, ix$RDA2))))
+sp[] <- sp * mul
+bp[] <- bp * mul
+ix[] <- ix * mul
+
+#changing the names of the traits 
+
+lab <- function(x) {
+  # fixing the names and shortening them for the plot
+  x <- gsub("I...Filtration", "I Filtration",x)
+  x <- gsub("Habitat_", "H: ", x)
+  x <- gsub("Trophic\\.group_", "TG: ", x)
+  x <- gsub("Feeding\\.type_", "FT: ", x)
+  x <- gsub("Reproduction\\.form_", "RF: ", x)
+  x <- gsub("Conduct", "Conductivity", x)
+  x <- gsub("Phycocianin", "Phycocyanin", x)
+  x <- gsub("reservoir\\.percentage", "Water availability", x)
+  x <- gsub("Alcalinity", "Alkalinity", x)
+  x <- gsub("Temp", "Temperature",x)
+  x <- gsub("\\.", " ", x)
+  }
+
+
+rda.sum <- summary(rda.cwm.final)
+ax1 <- round(100 * rda.sum$cont$importance[2, 1], 1)   # % de la varianza total
+ax2 <- round(100 * rda.sum$cont$importance[2, 2], 1)
+
+rda.plot.cwm <-
+  ggplot() +
+  geom_hline(yintercept = 0, linetype = 2) +
+  geom_vline(xintercept = 0, linetype = 2) +
+  geom_point(data = st,
+             aes(RDA1, RDA2,
+                 colour = normalized_fd_envi$Trophic.state,
+                 shape  = normalized_fd_envi$Type),
+             size = 2.5, alpha = 0.75) +
+  # CWM de los rasgos (respuesta)
+  geom_segment(data = sp, aes(x = 0, y = 0, xend = RDA1, yend = RDA2),
+               arrow = arrow(length = unit(0.3, "cm"), type = "closed"),
+               colour = "brown3", linewidth = 1) +
+  geom_text_repel(data = sp, aes(RDA1, RDA2, label = lab(rownames(sp))),
+                  colour = "brown3", fontface = "italic", size = 7,
+                  max.overlaps = Inf) +
+  # variables ambientales (restricciones)
+  geom_segment(data = bp, aes(x = 0, y = 0, xend = RDA1, yend = RDA2),
+               arrow = arrow(length = unit(0.3, "cm"), type = "closed"),
+               colour = "navy", linewidth = 1) +
+  geom_text_repel(data = bp, aes(RDA1, RDA2, label = lab(rownames(bp))),
+                  colour = "navy", size = 7, max.overlaps = Inf) +
+  # indices de diversidad (pasivos)
+  geom_segment(data = ix, aes(x = 0, y = 0, xend = RDA1, yend = RDA2),
+               arrow = arrow(length = unit(0.3, "cm"), type = "closed"),
+               colour = "black", linewidth = 1, linetype = "dashed") +
+  geom_text_repel(data = ix, aes(RDA1, RDA2, label = rownames(ix)),
+                  colour = "black", fontface = "bold", size = 7,
+                  max.overlaps = Inf) +
+  labs(x = paste0("RDA1 (", ax1, "%)"),
+       y = paste0("RDA2 (", ax2, "%)"),
+       colour = "Trophic state", shape = "Type") +
+  scale_color_manual(values = c("Oligotrophic"   = "dodgerblue3",
+                                "Mesotrophic"    = "gold3",
+                                "Eutrophic"      = "darkolivegreen",
+                                "Hypereutrophic" = "firebrick")) +
+  scale_shape_manual(values = c("1" = 15, "7" = 16, "9" = 17, "10" = 18,
+                                "11" = 19, "12" = 20, "13" = 8)) +
+  theme_bw() +
+  theme(panel.grid = element_blank(),
+        legend.position = "inside",
+        legend.position.inside = c(0.05, 0.99), # primero es X (ancho) y segundo es Y (alto)
+        legend.justification = c(0, 1),
+        legend.text = element_text(size = 18),
+        legend.title = element_text(size = 18),
+        axis.text.x = element_text(size = 15, face = "bold", color = "black"),
+        axis.text.y = element_text(size = 15, face = "bold", color = "black"),
+        text = element_text(size = 17.5, face = "bold", color = "black")) +
+  guides(color = guide_legend(ncol = 1), # only in one column
+         shape = guide_legend(ncol = 3)) +
+  coord_cartesian(xlim = c(-2.5, 2.8), ylim = c(-2, 2.5))
+
+
+print(rda.plot.cwm)
+
+# Leyenda de la figura: marron = CWM de rasgos (respuesta), azul = variables
+# ambientales (restricciones), verde discontinuo = indices de diversidad
+# ajustados pasivamente con envfit (longitud proporcional a sqrt(r2)).
+
+
+#image saved as metafile in 1400*970 
+
+
+#the below code is an alternative to the above RDA model, 
+#but it is not the correct one since it uses the hellinger transformed data and a distance-based model.
 
 #We will try with two models, the hellinger-transformed traits data 
 #and the distance-based model. The final model will be the one who 
